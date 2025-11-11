@@ -1,0 +1,20 @@
+[Unit]
+Description=YouTube Blocker Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/youtube-blocker
+ExecStart=/usr/bin/python3 /opt/youtube-blocker/youtube_blocker.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
