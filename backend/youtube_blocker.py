@@ -203,15 +203,13 @@ def add_to_whitelist():
 
         token = whitelist_manager.add_profile(profile_id, profile_name)
 
-        # Unblock YouTube when first profile is added
-        if len(whitelist_manager.get_all()) == 1:
-            logger.info("First profile added - unblocking YouTube")
-            hosts_manager.unblock_youtube()
+        # With firewall approach, we don't need to modify hosts file
+        # Proxy server will handle access control via token validation
 
         return jsonify({
             'success': True,
             'token': token,
-            'message': 'Profile added to whitelist - YouTube unblocked'
+            'message': 'Profile whitelisted - configure proxy to access YouTube'
         })
     except Exception as e:
         logger.error(f"Error adding to whitelist: {e}")
@@ -408,8 +406,9 @@ def main():
     """Main entry point"""
     logger.info("YouTube Blocker Service starting...")
 
-    # Block YouTube in hosts file
-    hosts_manager.block_youtube()
+    # NOTE: We use iptables firewall instead of hosts file
+    # This allows proxy to bypass while blocking all other access
+    # Run: sudo ./setup-firewall.sh setup
 
     # Start proxy server in a separate thread
     proxy_thread = threading.Thread(target=run_proxy_server)
