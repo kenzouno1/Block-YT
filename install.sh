@@ -154,7 +154,8 @@ create_install_dir() {
 resolve_youtube_ips() {
     local ips=()
 
-    # Try to resolve IPs using getent (fallback to hardcoded ranges if fails)
+    # Resolve IPs from YouTube-specific domains
+    # This will only block YouTube, not other Google services
     for domain in "${YOUTUBE_DOMAINS[@]}"; do
         local domain_ips=$(getent ahosts "$domain" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | sort -u || true)
 
@@ -167,18 +168,21 @@ resolve_youtube_ips() {
         fi
     done
 
-    # Always add YouTube IP ranges (Google's IP ranges)
-    local google_ranges=(
-        "172.217.0.0/16"
-        "142.250.0.0/15"
-        "216.58.192.0/19"
-        "172.253.0.0/16"
-        "142.251.0.0/16"
-    )
+    # IMPORTANT: Do NOT add Google IP ranges here!
+    # YouTube shares infrastructure with other Google services (Gmail, Drive, Search, etc.)
+    # Blocking entire Google IP ranges would affect all Google services
+    # We ONLY block specific IPs resolved from YouTube domains above
 
-    for range in "${google_ranges[@]}"; do
-        ips+=("$range")
-    done
+    # If no IPs were resolved, add some known YouTube-specific IPs as fallback
+    # These are content delivery IPs primarily used by YouTube
+    if [ ${#ips[@]} -eq 0 ]; then
+        # Add a few known YouTube video server IPs as fallback
+        # These are less likely to affect other Google services
+        ips+=(
+            "172.217.194.0/24"  # YouTube CDN
+            "142.250.185.0/24"  # YouTube CDN
+        )
+    fi
 
     # Return IPs
     echo "${ips[@]}"
