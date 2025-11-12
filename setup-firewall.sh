@@ -40,6 +40,29 @@ check_root() {
     fi
 }
 
+# Check if iptables is available
+check_iptables() {
+    if ! command -v iptables &> /dev/null; then
+        print_message "$RED" "❌ Error: iptables command not found"
+        print_message "$YELLOW" ""
+        print_message "$YELLOW" "This script requires iptables for firewall blocking."
+        print_message "$YELLOW" ""
+        print_message "$YELLOW" "Common causes:"
+        print_message "$YELLOW" "  - Running in a container/sandbox (Docker, LXC, etc.)"
+        print_message "$YELLOW" "  - iptables not installed on the system"
+        print_message "$YELLOW" ""
+        print_message "$YELLOW" "Solutions:"
+        print_message "$YELLOW" "  1. Run on a real Ubuntu system (not container)"
+        print_message "$YELLOW" "  2. Install iptables: sudo apt-get install iptables"
+        print_message "$YELLOW" "  3. Use Docker with --cap-add=NET_ADMIN flag"
+        print_message "$YELLOW" ""
+        print_message "$RED" "Firewall blocking will NOT work without iptables."
+        print_message "$YELLOW" "The application can still run, but YouTube will be accessible to all."
+        return 1
+    fi
+    return 0
+}
+
 # Resolve YouTube IPs
 resolve_youtube_ips() {
     print_message "$YELLOW" "Resolving YouTube IP addresses..."
