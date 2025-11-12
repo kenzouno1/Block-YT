@@ -185,21 +185,35 @@ async function removeFromWhitelist() {
 
 /**
  * Configure proxy for this profile
+ * IMPORTANT: Only proxy YouTube domains, let other traffic go direct
  */
 async function configureProxy(token) {
+  // PAC script to only proxy YouTube domains
+  const pacScript = `
+    function FindProxyForURL(url, host) {
+      // Only proxy YouTube-related domains
+      if (shExpMatch(host, "*youtube.com") ||
+          shExpMatch(host, "*.youtube.com") ||
+          shExpMatch(host, "*youtu.be") ||
+          shExpMatch(host, "*.youtu.be") ||
+          shExpMatch(host, "*googlevideo.com") ||
+          shExpMatch(host, "*.googlevideo.com") ||
+          shExpMatch(host, "*ytimg.com") ||
+          shExpMatch(host, "*.ytimg.com") ||
+          shExpMatch(host, "*youtube-nocookie.com") ||
+          shExpMatch(host, "*.youtube-nocookie.com")) {
+        return "PROXY ${PROXY_HOST}:${PROXY_PORT}";
+      }
+
+      // All other traffic goes direct (no proxy)
+      return "DIRECT";
+    }
+  `;
+
   const config = {
-    mode: "fixed_servers",
-    rules: {
-      singleProxy: {
-        scheme: "http",
-        host: PROXY_HOST,
-        port: PROXY_PORT
-      },
-      bypassList: [
-        "127.0.0.1",
-        "localhost",
-        "<local>"
-      ]
+    mode: "pac_script",
+    pacScript: {
+      data: pacScript
     }
   };
 
@@ -215,7 +229,7 @@ async function configureProxy(token) {
     // Update header modification rules
     await updateHeaderRules();
 
-    console.log('Proxy configured successfully');
+    console.log('Proxy configured successfully (YouTube domains only)');
   } catch (error) {
     console.error('Error configuring proxy:', error);
   }
