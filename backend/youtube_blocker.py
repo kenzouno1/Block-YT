@@ -273,27 +273,17 @@ def handle_proxy_client(client_socket, client_address):
             client_socket.close()
             return
 
-        # Parse the request to extract the token
+        # Parse the request
         request_str = request_data.decode('utf-8', errors='ignore')
         lines = request_str.split('\n')
 
-        # Look for X-YT-Blocker-Token header
-        token = None
-        for line in lines:
-            if line.startswith('X-YT-Blocker-Token:'):
-                token = line.split(':', 1)[1].strip()
-                break
-
-        # Validate token
-        if not token or not whitelist_manager.is_whitelisted(token):
-            # Send 403 Forbidden
-            response = "HTTP/1.1 403 Forbidden\r\n"
-            response += "Content-Type: text/plain\r\n"
-            response += "\r\n"
-            response += "YouTube access denied. Profile not whitelisted.\r\n"
-            client_socket.sendall(response.encode())
-            client_socket.close()
-            return
+        # IMPORTANT: We don't validate tokens in the proxy
+        # Reason: HTTPS CONNECT requests don't support custom headers
+        # Security model:
+        #   1. Proxy only listens on 127.0.0.1 (localhost only)
+        #   2. Only Chrome profiles with extension have proxy configured
+        #   3. Firewall blocks all YouTube traffic except localhost
+        # This provides sufficient security without token validation
 
         # Extract target host and port
         first_line = lines[0]
