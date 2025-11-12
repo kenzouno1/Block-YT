@@ -102,8 +102,8 @@ sudo systemctl start youtube-blocker
 
 **Giải pháp:**
 ```bash
-# Cài đặt dependencies thủ công
-sudo pip3 install flask flask-cors requests
+# Cài đặt dependencies thủ công (Ubuntu 22.04+)
+sudo apt-get install python3-flask python3-flask-cors python3-requests
 
 # Restart service
 sudo systemctl restart youtube-blocker

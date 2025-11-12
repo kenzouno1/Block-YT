@@ -6,10 +6,10 @@ Generate simple PNG icons for the Chrome extension
 try:
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:
-    print("PIL/Pillow not installed. Installing...")
-    import subprocess
-    subprocess.check_call(['pip3', 'install', 'Pillow'])
-    from PIL import Image, ImageDraw, ImageFont
+    print("Error: PIL/Pillow not installed!")
+    print("Please install it with: sudo apt-get install python3-pil")
+    import sys
+    sys.exit(1)
 
 def create_icon(size):
     """Create a simple icon with shield emoji"""

@@ -57,14 +57,17 @@ check_ubuntu() {
 install_dependencies() {
     print_message "$YELLOW" "Installing Python dependencies..."
 
-    # Install pip if not present
-    if ! command -v pip3 &> /dev/null; then
-        apt-get update
-        apt-get install -y python3-pip
-    fi
+    # Update package list
+    apt-get update
 
-    # Install required packages
-    pip3 install flask flask-cors requests
+    # Install Python packages from apt (Ubuntu 22.04+ uses PEP 668)
+    print_message "$YELLOW" "Installing python3-flask, python3-flask-cors, python3-requests, python3-pil..."
+    apt-get install -y \
+        python3 \
+        python3-flask \
+        python3-flask-cors \
+        python3-requests \
+        python3-pil
 
     print_message "$GREEN" "Dependencies installed successfully"
 }

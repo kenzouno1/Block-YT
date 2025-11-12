@@ -17,6 +17,8 @@ Một ứng dụng chặn YouTube hoàn toàn trên Ubuntu, chỉ cho phép các
 - Google Chrome hoặc Chromium
 - Quyền root/sudo để cài đặt
 
+**Lưu ý cho Ubuntu 22.04+**: Script cài đặt sử dụng `apt` để cài packages (tuân thủ PEP 668), không dùng `pip` trực tiếp vào system Python.
+
 ## 🏗️ Kiến trúc hệ thống
 
 ```
@@ -206,8 +208,11 @@ Service chạy trên `http://127.0.0.1:9876`:
 # Kiểm tra logs
 sudo journalctl -u youtube-blocker -n 100
 
-# Kiểm tra Python dependencies
-pip3 install flask flask-cors requests
+# Kiểm tra Python dependencies (Ubuntu 22.04+)
+sudo apt-get install python3-flask python3-flask-cors python3-requests
+
+# Hoặc cho Ubuntu cũ hơn (nếu apt packages không có)
+# pip3 install flask flask-cors requests --break-system-packages
 
 # Thử start thủ công
 sudo python3 /opt/youtube-blocker/youtube_blocker.py
