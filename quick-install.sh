@@ -36,15 +36,48 @@ INSTALL_DIR="/tmp/block-yt-install"
 
 print_message "Step 1: Installing dependencies..." "$YELLOW"
 apt-get update -qq
-apt-get install -y git curl > /dev/null 2>&1
-print_message "✅ Dependencies installed" "$GREEN"
+
+# Check if git is installed, if not install it
+if ! command -v git &> /dev/null; then
+    print_message "Installing git..." "$YELLOW"
+    apt-get install -y git curl wget unzip > /dev/null 2>&1
+    print_message "✅ Git installed" "$GREEN"
+else
+    print_message "✅ Git already installed" "$GREEN"
+fi
+
+# Ensure curl/wget available
+apt-get install -y curl wget unzip > /dev/null 2>&1
 
 print_message "\nStep 2: Downloading YouTube Blocker..." "$YELLOW"
 # Remove old installation directory if exists
 rm -rf "$INSTALL_DIR"
 
-# Clone repository
-git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" > /dev/null 2>&1
+# Try git clone first (preferred method)
+if command -v git &> /dev/null; then
+    print_message "Cloning repository via git..." "$YELLOW"
+    git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" > /dev/null 2>&1
+else
+    # Fallback: Download zip if git not available
+    print_message "Git not available, downloading zip..." "$YELLOW"
+    TEMP_ZIP="/tmp/block-yt.zip"
+
+    # Try curl first, then wget
+    if command -v curl &> /dev/null; then
+        curl -L -o "$TEMP_ZIP" "https://github.com/kenzouno1/Block-YT/archive/refs/heads/$BRANCH.zip" > /dev/null 2>&1
+    elif command -v wget &> /dev/null; then
+        wget -O "$TEMP_ZIP" "https://github.com/kenzouno1/Block-YT/archive/refs/heads/$BRANCH.zip" > /dev/null 2>&1
+    else
+        print_message "Error: Neither curl nor wget is available" "$RED"
+        exit 1
+    fi
+
+    # Unzip
+    unzip -q "$TEMP_ZIP" -d /tmp/
+    mv "/tmp/Block-YT-$BRANCH" "$INSTALL_DIR"
+    rm -f "$TEMP_ZIP"
+fi
+
 cd "$INSTALL_DIR"
 
 print_message "✅ Repository downloaded" "$GREEN"
