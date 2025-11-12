@@ -70,7 +70,7 @@ git clone https://github.com/kenzouno1/Block-YT.git
 cd Block-YT
 ```
 
-### 2. Chạy script cài đặt
+### 2. Cài đặt Backend Service
 
 ```bash
 sudo ./install.sh
@@ -81,16 +81,25 @@ Script sẽ tự động:
 - Tạo systemd service
 - Enable service để tự động start cùng OS
 - Khởi động service
-- Generate icon cho Chrome extension
 - Chặn YouTube trong `/etc/hosts`
 
-### 3. Cài đặt Chrome Extension
+### 3. Build và Cài đặt Chrome Extension
+
+Extension được build riêng biệt:
+
+```bash
+./build-extension.sh
+```
+
+Sau khi build xong, cài đặt extension:
 
 1. Mở Chrome và truy cập `chrome://extensions/`
 2. Bật **Developer mode** (góc trên bên phải)
 3. Click **Load unpacked**
-4. Chọn thư mục `chrome-extension` từ repository này
+4. Chọn thư mục `build/youtube-blocker-extension/`
 5. Extension sẽ xuất hiện trên thanh công cụ Chrome
+
+Xem thêm hướng dẫn chi tiết tại [chrome-extension/README.md](chrome-extension/README.md)
 
 ## 📱 Sử dụng
 

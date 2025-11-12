@@ -1,6 +1,6 @@
 # 🚀 Hướng dẫn nhanh - Quick Start
 
-## Cài đặt trong 3 bước
+## Cài đặt trong 4 bước
 
 ### Bước 1: Cài đặt Backend Service
 
@@ -15,15 +15,24 @@ sudo ./install.sh
 
 Đợi cho đến khi thấy thông báo "Installation Complete! 🎉"
 
-### Bước 2: Cài đặt Chrome Extension
+### Bước 2: Build Chrome Extension
+
+```bash
+# Build extension
+./build-extension.sh
+```
+
+Script sẽ tạo extension trong thư mục `build/`
+
+### Bước 3: Cài đặt Chrome Extension
 
 1. Mở Chrome browser
 2. Vào `chrome://extensions/`
 3. Bật **"Developer mode"** (góc trên bên phải)
 4. Click **"Load unpacked"**
-5. Chọn thư mục `chrome-extension` trong thư mục Block-YT
+5. Chọn thư mục `build/youtube-blocker-extension/`
 
-### Bước 3: Kích hoạt YouTube cho Chrome Profile
+### Bước 4: Kích hoạt YouTube cho Chrome Profile
 
 1. Click vào icon **YouTube Blocker** 🛡️ trên thanh Chrome
 2. Click nút **"✅ Enable YouTube Access"**

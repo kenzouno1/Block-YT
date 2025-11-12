@@ -129,17 +129,6 @@ start_service() {
     fi
 }
 
-# Generate extension icons
-generate_icons() {
-    print_message "$YELLOW" "Generating Chrome extension icons..."
-
-    cd chrome-extension
-    python3 generate_icons.py
-    cd ..
-
-    print_message "$GREEN" "Icons generated successfully"
-}
-
 # Show completion message
 show_completion() {
     print_message "$GREEN" "
@@ -149,17 +138,8 @@ show_completion() {
 
 YouTube is now blocked system-wide by default.
 
-Next steps:
-1. Install the Chrome extension:
-   - Open Chrome and go to chrome://extensions/
-   - Enable 'Developer mode' (top right)
-   - Click 'Load unpacked'
-   - Select the 'chrome-extension' folder from this repository
-
-2. Use the extension:
-   - Click the extension icon in Chrome
-   - Click 'Enable YouTube Access' to whitelist this Chrome profile
-   - Only whitelisted profiles can access YouTube
+The backend service is running and ready to accept connections.
+Install the Chrome extension separately to whitelist specific Chrome profiles.
 
 Service Management:
   Status:  sudo systemctl status $SERVICE_NAME
@@ -194,7 +174,6 @@ main() {
     install_dependencies
     create_install_dir
     install_service
-    generate_icons
     start_service
 
     show_completion
