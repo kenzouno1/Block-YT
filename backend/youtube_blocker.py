@@ -9,6 +9,7 @@ import json
 import logging
 import socket
 import threading
+import subprocess
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -23,10 +24,16 @@ PROXY_PORT = 8888
 
 # YouTube domains to block
 YOUTUBE_DOMAINS = [
-    'www.youtube.com',
     'youtube.com',
-    'youtu.be',
+    'www.youtube.com',
     'm.youtube.com',
+    'studio.youtube.com',
+    'music.youtube.com',
+    'tv.youtube.com',
+    'kids.youtube.com',
+    'gaming.youtube.com',
+    'youtu.be',
+    'www.youtu.be',
     'youtube-ui.l.google.com',
     'youtubei.googleapis.com',
 ]
@@ -264,6 +271,48 @@ def run_api_server():
     logger.info(f"Starting API server on port {API_PORT}")
     app.run(host='127.0.0.1', port=API_PORT, debug=False)
 
+def resolve_dns_bypass_hosts(hostname):
+    """
+    Resolve hostname using public DNS (8.8.8.8), bypassing /etc/hosts
+    This is critical because /etc/hosts blocks YouTube domains
+    """
+    try:
+        # Use dig command to query Google DNS directly
+        # This bypasses /etc/hosts file
+        result = subprocess.run(
+            ['dig', '+short', hostname, '@8.8.8.8'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            # Get first IP from result (dig returns multiple lines for multiple IPs)
+            ips = [line.strip() for line in result.stdout.strip().split('\n') if line.strip()]
+            # Filter out non-IP lines (sometimes dig returns CNAME records)
+            import re
+            for ip in ips:
+                if re.match(r'^\d+\.\d+\.\d+\.\d+$', ip):
+                    logger.debug(f"Resolved {hostname} → {ip} via DNS")
+                    return ip
+
+            # If no direct IP found, use first line
+            if ips:
+                return ips[0]
+
+        # Fallback to system resolution (which will use /etc/hosts - but better than failing)
+        logger.warning(f"dig failed for {hostname}, using system resolver")
+        return socket.gethostbyname(hostname)
+
+    except subprocess.TimeoutExpired:
+        logger.error(f"DNS resolution timeout for {hostname}")
+        # Fallback to system resolution
+        return socket.gethostbyname(hostname)
+    except Exception as e:
+        logger.error(f"Error resolving {hostname}: {e}")
+        # Fallback to system resolution
+        return socket.gethostbyname(hostname)
+
 def handle_proxy_client(client_socket, client_address):
     """Handle a proxy client connection"""
     try:
@@ -300,9 +349,15 @@ def handle_proxy_client(client_socket, client_address):
                     port = 443
 
                 # Connect to the target server
+                # IMPORTANT: Use DNS bypass to avoid /etc/hosts blocking
                 try:
                     target_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    target_socket.connect((host, port))
+
+                    # Resolve IP bypassing /etc/hosts (critical for YouTube domains)
+                    target_ip = resolve_dns_bypass_hosts(host)
+                    logger.info(f"Connecting to {host} ({target_ip}:{port})")
+
+                    target_socket.connect((target_ip, port))
 
                     # Send connection established response
                     response = "HTTP/1.1 200 Connection Established\r\n\r\n"
@@ -345,8 +400,14 @@ def handle_proxy_client(client_socket, client_address):
 
             try:
                 # Connect to target server
+                # IMPORTANT: Use DNS bypass to avoid /etc/hosts blocking
                 target_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                target_socket.connect((host, 80))
+
+                # Resolve IP bypassing /etc/hosts
+                target_ip = resolve_dns_bypass_hosts(host)
+                logger.info(f"Connecting to {host} ({target_ip}:80)")
+
+                target_socket.connect((target_ip, 80))
                 target_socket.sendall(request_data)
 
                 # Forward response
@@ -396,9 +457,10 @@ def main():
     """Main entry point"""
     logger.info("YouTube Blocker Service starting...")
 
-    # NOTE: We use iptables firewall instead of hosts file
-    # This allows proxy to bypass while blocking all other access
-    # Run: sudo ./setup-firewall.sh setup
+    # Note: /etc/hosts blocking is set up by install.sh
+    # We don't need to modify it here - it's already configured
+    # Browsers will resolve YouTube to 127.0.0.1 and fail
+    # Chrome with extension uses proxy which resolves real IPs (bypasses /etc/hosts)
 
     # Start proxy server in a separate thread
     proxy_thread = threading.Thread(target=run_proxy_server)

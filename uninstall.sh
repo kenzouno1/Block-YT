@@ -100,57 +100,22 @@ remove_service() {
     fi
 }
 
-# Remove firewall rules
-remove_firewall() {
-    print_message "$YELLOW" "Removing firewall rules..."
-
-    if ! command -v iptables &> /dev/null; then
-        print_message "$YELLOW" "iptables not available, skipping firewall cleanup"
-        return
-    fi
-
-    # Remove OUTPUT rules
-    iptables -D OUTPUT -o lo -j ACCEPT 2>/dev/null || true
-    iptables -D OUTPUT ! -o lo -j YOUTUBE_BLOCK 2>/dev/null || true
-
-    # Flush and delete custom chain
-    iptables -F YOUTUBE_BLOCK 2>/dev/null || true
-    iptables -X YOUTUBE_BLOCK 2>/dev/null || true
-
-    # Save rules to persist across reboots
-    if command -v iptables-save > /dev/null 2>&1; then
-        mkdir -p /etc/iptables
-        iptables-save > /etc/iptables/rules.v4 2>/dev/null || \
-        iptables-save > /etc/iptables.rules 2>/dev/null || true
-
-        # Use netfilter-persistent if available
-        if command -v netfilter-persistent > /dev/null 2>&1; then
-            netfilter-persistent save 2>/dev/null || true
-        fi
-    fi
-
-    print_message "$GREEN" "✅ Firewall rules removed"
-}
-
-# Clean up hosts file (in case of old version)
+# Clean up hosts file
 cleanup_hosts_file() {
-    print_message "$YELLOW" "Checking for old /etc/hosts entries..."
+    print_message "$YELLOW" "Removing YouTube entries from /etc/hosts..."
 
-    if grep -q "youtube" /etc/hosts 2>/dev/null; then
-        print_message "$YELLOW" "Found YouTube entries in /etc/hosts, cleaning up..."
-
-        # Backup hosts file
-        cp /etc/hosts /etc/hosts.backup.$(date +%Y%m%d_%H%M%S)
-
-        # Remove YouTube entries
+    if grep -q "YouTube Blocker" /etc/hosts 2>/dev/null; then
+        # Remove YouTube Blocker entries
         sed -i '/# YouTube Blocker - START/,/# YouTube Blocker - END/d' /etc/hosts
-        sed -i '/youtube/d' /etc/hosts
-        sed -i '/googlevideo/d' /etc/hosts
-        sed -i '/ytimg/d' /etc/hosts
 
-        print_message "$GREEN" "✅ Old hosts entries removed"
+        print_message "$GREEN" "✅ YouTube entries removed from /etc/hosts"
+
+        # Restore from backup if exists
+        if [ -f /etc/hosts.backup ]; then
+            print_message "$YELLOW" "Backup found at /etc/hosts.backup (kept for safety)"
+        fi
     else
-        print_message "$GREEN" "✅ No old hosts entries found"
+        print_message "$GREEN" "✅ No YouTube entries found in /etc/hosts"
     fi
 }
 
@@ -202,11 +167,10 @@ show_completion() {
 YouTube Blocker has been removed from your system.
 
 What was removed:
-  ✅ Firewall rules (iptables) - YouTube unblocked
+  ✅ /etc/hosts entries - YouTube unblocked
   ✅ Backend service - Stopped and removed
   ✅ Installation files - Deleted
   ✅ Systemd service - Disabled and removed
-  ✅ Old hosts entries - Cleaned up
 
 YouTube is now accessible from all browsers again.
 
@@ -214,6 +178,9 @@ Note: You may need to manually remove the Chrome extension:
   1. Go to chrome://extensions/
   2. Find 'YouTube Blocker Whitelist'
   3. Click 'Remove'
+
+Backup files kept (for safety):
+  - /etc/hosts.backup (original hosts file)
 
 If you kept whitelist data, it's still in:
   /var/lib/youtube-blocker/whitelist.json
@@ -238,8 +205,7 @@ main() {
 
     # Remove components
     remove_service            # Remove systemd service
-    remove_firewall           # Remove iptables firewall rules
-    cleanup_hosts_file        # Clean up old hosts file entries
+    cleanup_hosts_file        # Clean up hosts file entries
     remove_files              # Remove installation files
 
     # Ask about data

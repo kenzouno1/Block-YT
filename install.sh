@@ -85,26 +85,40 @@ check_iptables() {
     return 0
 }
 
-# Clean up old hosts file entries (from previous version)
-cleanup_hosts_file() {
-    print_message "$YELLOW" "Checking for old /etc/hosts entries..."
+# Setup /etc/hosts blocking for YouTube
+setup_hosts_blocking() {
+    print_message "$YELLOW" "Setting up /etc/hosts blocking for YouTube..."
 
-    if grep -q "youtube" /etc/hosts 2>/dev/null; then
-        print_message "$YELLOW" "Found old YouTube entries in /etc/hosts, cleaning up..."
-
-        # Backup hosts file
-        cp /etc/hosts /etc/hosts.backup.$(date +%Y%m%d_%H%M%S)
-
-        # Remove YouTube entries
-        sed -i '/# YouTube Blocker - START/,/# YouTube Blocker - END/d' /etc/hosts
-        sed -i '/youtube/d' /etc/hosts
-        sed -i '/googlevideo/d' /etc/hosts
-        sed -i '/ytimg/d' /etc/hosts
-
-        print_message "$GREEN" "✅ Old hosts entries removed"
-    else
-        print_message "$GREEN" "✅ No old hosts entries found"
+    # Backup hosts file if not exists
+    if [ ! -f /etc/hosts.backup ]; then
+        cp /etc/hosts /etc/hosts.backup
+        print_message "$GREEN" "✅ Created hosts file backup"
     fi
+
+    # Remove old YouTube entries
+    sed -i '/# YouTube Blocker - START/,/# YouTube Blocker - END/d' /etc/hosts
+
+    # Add YouTube domains pointing to 127.0.0.1
+    # This blocks all browsers from accessing YouTube
+    # Chrome with extension bypasses this by using proxy
+    cat >> /etc/hosts << 'EOF'
+# YouTube Blocker - START
+127.0.0.1 youtube.com
+127.0.0.1 www.youtube.com
+127.0.0.1 m.youtube.com
+127.0.0.1 studio.youtube.com
+127.0.0.1 music.youtube.com
+127.0.0.1 tv.youtube.com
+127.0.0.1 kids.youtube.com
+127.0.0.1 gaming.youtube.com
+127.0.0.1 youtu.be
+127.0.0.1 www.youtu.be
+127.0.0.1 youtubei.googleapis.com
+127.0.0.1 youtube-ui.l.google.com
+# YouTube Blocker - END
+EOF
+
+    print_message "$GREEN" "✅ YouTube domains blocked in /etc/hosts"
 }
 
 # Install Python dependencies
@@ -115,13 +129,14 @@ install_dependencies() {
     apt-get update
 
     # Install Python packages from apt (Ubuntu 22.04+ uses PEP 668)
-    print_message "$YELLOW" "Installing python3-flask, python3-flask-cors, python3-requests, python3-pil..."
+    print_message "$YELLOW" "Installing dependencies..."
     apt-get install -y \
         python3 \
         python3-flask \
         python3-flask-cors \
         python3-requests \
         python3-pil \
+        dnsutils \
         iptables \
         iptables-persistent
 
@@ -150,91 +165,12 @@ create_install_dir() {
     print_message "$GREEN" "Installation directory created"
 }
 
-# Resolve YouTube IPs (without printing to stdout, use stderr for messages)
-resolve_youtube_ips() {
-    local ips=()
-
-    # Resolve IPs from YouTube-specific domains
-    # This will only block YouTube, not other Google services
-    for domain in "${YOUTUBE_DOMAINS[@]}"; do
-        local domain_ips=$(getent ahosts "$domain" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | sort -u || true)
-
-        if [ -n "$domain_ips" ]; then
-            while IFS= read -r ip; do
-                if [[ ! " ${ips[@]} " =~ " ${ip} " ]]; then
-                    ips+=("$ip")
-                fi
-            done <<< "$domain_ips"
-        fi
-    done
-
-    # IMPORTANT: Do NOT add Google IP ranges here!
-    # YouTube shares infrastructure with other Google services (Gmail, Drive, Search, etc.)
-    # Blocking entire Google IP ranges would affect all Google services
-    # We ONLY block specific IPs resolved from YouTube domains above
-
-    # If no IPs were resolved, add some known YouTube-specific IPs as fallback
-    # These are content delivery IPs primarily used by YouTube
-    if [ ${#ips[@]} -eq 0 ]; then
-        # Add a few known YouTube video server IPs as fallback
-        # These are less likely to affect other Google services
-        ips+=(
-            "172.217.194.0/24"  # YouTube CDN
-            "142.250.185.0/24"  # YouTube CDN
-        )
-    fi
-
-    # Return IPs
-    echo "${ips[@]}"
-}
-
-# Setup firewall to block YouTube
-setup_firewall() {
-    print_message "$YELLOW" "Setting up firewall to block YouTube..."
-
-    # Get YouTube IPs
-    local youtube_ips=($(resolve_youtube_ips))
-
-    if [ ${#youtube_ips[@]} -eq 0 ]; then
-        print_message "$RED" "Error: No YouTube IPs resolved"
-        exit 1
-    fi
-
-    print_message "$YELLOW" "Resolved ${#youtube_ips[@]} YouTube IP addresses/ranges"
-
-    # Create custom chain for YouTube blocking
-    iptables -N YOUTUBE_BLOCK 2>/dev/null || iptables -F YOUTUBE_BLOCK
-
-    # Block YouTube IPs in the custom chain
-    for ip in "${youtube_ips[@]}"; do
-        iptables -A YOUTUBE_BLOCK -d "$ip" -j REJECT --reject-with icmp-host-prohibited 2>/dev/null || true
-    done
-
-    # Insert rule at the beginning of OUTPUT chain
-    # But ALLOW localhost connections (for proxy)
-    iptables -C OUTPUT -o lo -j ACCEPT 2>/dev/null || \
-        iptables -I OUTPUT 1 -o lo -j ACCEPT
-
-    # Jump to YOUTUBE_BLOCK chain for non-localhost traffic
-    iptables -C OUTPUT ! -o lo -j YOUTUBE_BLOCK 2>/dev/null || \
-        iptables -I OUTPUT 2 ! -o lo -j YOUTUBE_BLOCK
-
-    # Save rules to persist across reboots
-    if command -v iptables-save > /dev/null 2>&1; then
-        mkdir -p /etc/iptables
-        iptables-save > /etc/iptables/rules.v4 2>/dev/null || \
-        iptables-save > /etc/iptables.rules 2>/dev/null || true
-
-        # Use netfilter-persistent if available
-        if command -v netfilter-persistent > /dev/null 2>&1; then
-            netfilter-persistent save 2>/dev/null || true
-        fi
-    fi
-
-    print_message "$GREEN" "✅ Firewall configured successfully"
-    print_message "$GREEN" "   - YouTube IPs blocked: ${#youtube_ips[@]}"
-    print_message "$GREEN" "   - Localhost traffic allowed (for proxy)"
-}
+# Note: We use /etc/hosts blocking instead of iptables
+# This is simpler and more reliable:
+# - Browsers resolve YouTube to 127.0.0.1 → Connection fails
+# - Chrome with extension uses proxy which resolves real IPs → Bypasses /etc/hosts
+# - No complex iptables rules needed
+# - Google services (Gmail, Drive, etc.) work normally
 
 # Install systemd service
 install_service() {
@@ -328,11 +264,19 @@ show_completion() {
 ║                   Installation Complete! 🎉                    ║
 ╚════════════════════════════════════════════════════════════════╝
 
-YouTube is now BLOCKED system-wide via iptables firewall.
+YouTube is now BLOCKED system-wide via /etc/hosts.
 
-✅ Firewall configured - All YouTube traffic blocked
+✅ /etc/hosts configured - YouTube domains → 127.0.0.1
 ✅ Backend service running - API & Proxy ready
-✅ Localhost allowed - Proxy can bypass firewall
+✅ All Google services work normally (Gmail, Drive, Search, etc.)
+
+How it works:
+=============
+  1. All browsers resolve youtube.com → 127.0.0.1
+  2. Connection fails (YouTube blocked)
+  3. Chrome with extension uses proxy
+  4. Proxy resolves real YouTube IPs (bypasses /etc/hosts)
+  5. Chrome with extension can access YouTube!
 
 IMPORTANT - Install Chrome Extension:
 =====================================
@@ -345,13 +289,15 @@ Chrome profiles need the extension to access YouTube.
 
 The extension will:
   - Auto-enable on install (no click needed)
-  - Configure proxy: 127.0.0.1:8888
-  - Get token from backend
-  - Send token in headers
+  - Configure PAC script proxy: 127.0.0.1:8888
+  - Register profile with backend
+  - Bypass /etc/hosts blocking
 
 Result:
+=======
   ✅ Chrome with extension → YouTube accessible
-  ❌ Firefox/Edge/other browsers → YouTube blocked
+  ✅ Gmail, Drive, Search → All work normally
+  ❌ Firefox/Edge → YouTube blocked
   ❌ Chrome without extension → YouTube blocked
 
 Service Management:
@@ -364,16 +310,17 @@ Or if no systemd:
   Check:    ps aux | grep youtube_blocker.py
   Logs:     tail -f /tmp/youtube-blocker.log
 
-Firewall Management:
-====================
-  Check:    sudo iptables -L YOUTUBE_BLOCK -n
-  Remove:   sudo ./uninstall.sh
+Hosts File:
+===========
+  View:     cat /etc/hosts | grep -A 10 'YouTube Blocker'
+  Restore:  sudo cp /etc/hosts.backup /etc/hosts
 
 Files:
 ======
   Backend:   $INSTALL_DIR/youtube_blocker.py
   Whitelist: /var/lib/youtube-blocker/whitelist.json
   Logs:      $LOG_FILE
+  Hosts:     /etc/hosts
 
 Uninstall:
 ==========
@@ -393,21 +340,17 @@ main() {
 
     check_root
     check_ubuntu
-    check_iptables
 
     print_message "$YELLOW" "Starting installation...\\n"
 
-    # Clean up old version (hosts file entries)
-    cleanup_hosts_file
-
-    # Install dependencies
+    # Install dependencies (including iptables-persistent for future use)
     install_dependencies
 
     # Create installation directory
     create_install_dir
 
-    # Setup firewall (BLOCKS YouTube system-wide)
-    setup_firewall
+    # Setup /etc/hosts blocking (BLOCKS YouTube for all browsers)
+    setup_hosts_blocking
 
     # Try to install and start systemd service
     # If systemd not available, start manually

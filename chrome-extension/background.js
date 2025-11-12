@@ -8,11 +8,33 @@ const PROXY_PORT = 8888;
 
 // Initialize extension - Auto-enable on install
 chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log('YouTube Blocker Extension installed');
+  console.log('YouTube Blocker Extension installed/updated');
 
-  // Auto-enable on first install
-  if (details.reason === 'install') {
-    console.log('First install - auto-enabling YouTube access...');
+  // Check if we have existing token
+  const existingToken = await getStoredValue('whitelistToken');
+
+  if (existingToken) {
+    // Already whitelisted, verify token is still valid
+    console.log('Existing token found, verifying...');
+    const isValid = await checkWhitelistStatus();
+
+    if (!isValid) {
+      // Token invalid, re-enable
+      console.log('Token invalid, re-enabling...');
+      try {
+        const result = await addToWhitelist();
+        if (result.success) {
+          console.log('✅ Re-enabled successfully!');
+        }
+      } catch (error) {
+        console.error('Failed to re-enable:', error);
+      }
+    } else {
+      console.log('✅ Token valid, already enabled!');
+    }
+  } else {
+    // No token, auto-enable
+    console.log('No token found, auto-enabling YouTube access...');
     try {
       const result = await addToWhitelist();
       if (result.success) {
@@ -21,9 +43,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     } catch (error) {
       console.error('Failed to auto-enable:', error);
     }
-  } else {
-    // On update, just check status
-    checkWhitelistStatus();
   }
 });
 
@@ -193,16 +212,20 @@ async function configureProxy(token) {
   const pacScript = `
     function FindProxyForURL(url, host) {
       // Only proxy YouTube-related domains
-      if (shExpMatch(host, "*youtube.com") ||
+      // Must check both exact match and subdomain match
+      if (host == "youtube.com" ||
           shExpMatch(host, "*.youtube.com") ||
-          shExpMatch(host, "*youtu.be") ||
+          host == "youtu.be" ||
           shExpMatch(host, "*.youtu.be") ||
-          shExpMatch(host, "*googlevideo.com") ||
+          host == "googlevideo.com" ||
           shExpMatch(host, "*.googlevideo.com") ||
-          shExpMatch(host, "*ytimg.com") ||
+          host == "ytimg.com" ||
           shExpMatch(host, "*.ytimg.com") ||
-          shExpMatch(host, "*youtube-nocookie.com") ||
-          shExpMatch(host, "*.youtube-nocookie.com")) {
+          host == "youtube-nocookie.com" ||
+          shExpMatch(host, "*.youtube-nocookie.com") ||
+          host == "youtubei.googleapis.com" ||
+          shExpMatch(host, "*.youtubei.googleapis.com") ||
+          host == "youtube-ui.l.google.com") {
         return "PROXY ` + PROXY_HOST + `:` + PROXY_PORT + `";
       }
 
