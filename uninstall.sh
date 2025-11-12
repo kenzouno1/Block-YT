@@ -77,16 +77,24 @@ remove_files() {
     print_message "$GREEN" "Installation files removed"
 }
 
-# Remove hosts file entries
-clean_hosts() {
-    print_message "$YELLOW" "Cleaning hosts file..."
+# Remove firewall rules
+remove_firewall() {
+    print_message "$YELLOW" "Removing firewall rules..."
 
-    # Remove YouTube blocker entries from /etc/hosts
-    if grep -q "# YouTube Blocker - START" /etc/hosts; then
-        sed -i '/# YouTube Blocker - START/,/# YouTube Blocker - END/d' /etc/hosts
-        print_message "$GREEN" "Hosts file cleaned"
+    if [ -f "./setup-firewall.sh" ]; then
+        ./setup-firewall.sh remove
+        print_message "$GREEN" "Firewall rules removed"
     else
-        print_message "$YELLOW" "No hosts file entries found"
+        print_message "$YELLOW" "setup-firewall.sh not found, skipping"
+    fi
+}
+
+# Stop backend manually if running
+stop_backend_manual() {
+    print_message "$YELLOW" "Stopping backend service..."
+
+    if [ -f "./start-backend.sh" ]; then
+        ./start-backend.sh stop 2>/dev/null || print_message "$YELLOW" "Backend not running"
     fi
 }
 
@@ -115,10 +123,21 @@ show_completion() {
 
 YouTube Blocker has been removed from your system.
 
+What was removed:
+  ✅ Firewall rules (iptables) - YouTube unblocked
+  ✅ Backend service - Stopped and removed
+  ✅ Installation files - Deleted
+  ✅ Systemd service - Disabled and removed
+
+YouTube is now accessible from all browsers again.
+
 Note: You may need to manually remove the Chrome extension:
   1. Go to chrome://extensions/
   2. Find 'YouTube Blocker Whitelist'
   3. Click 'Remove'
+
+If you kept whitelist data, it's still in:
+  /var/lib/youtube-blocker/whitelist.json
 "
 }
 
@@ -134,11 +153,17 @@ main() {
 
     print_message "$YELLOW" "Starting uninstallation...\n"
 
-    stop_service
-    remove_service
-    clean_hosts
-    remove_files
-    remove_data
+    # Stop services
+    stop_service              # Stop systemd service if exists
+    stop_backend_manual       # Stop manual backend if running
+
+    # Remove components
+    remove_service            # Remove systemd service
+    remove_firewall           # Remove iptables firewall rules
+    remove_files              # Remove installation files
+
+    # Ask about data
+    remove_data               # Ask to remove whitelist data
 
     show_completion
 }

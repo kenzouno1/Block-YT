@@ -136,26 +136,108 @@ show_completion() {
 ║                   Installation Complete! 🎉                    ║
 ╚════════════════════════════════════════════════════════════════╝
 
-YouTube is now blocked system-wide by default.
+YouTube is now BLOCKED system-wide via iptables firewall.
 
-The backend service is running and ready to accept connections.
-Install the Chrome extension separately to whitelist specific Chrome profiles.
+✅ Firewall configured - All YouTube traffic blocked
+✅ Backend service running - API & Proxy ready
+✅ Localhost allowed - Proxy can bypass firewall
 
-Service Management:
-  Status:  sudo systemctl status $SERVICE_NAME
-  Stop:    sudo systemctl stop $SERVICE_NAME
-  Start:   sudo systemctl start $SERVICE_NAME
-  Restart: sudo systemctl restart $SERVICE_NAME
-  Logs:    sudo journalctl -u $SERVICE_NAME -f
+IMPORTANT - Install Chrome Extension:
+=====================================
+Chrome profiles need the extension to access YouTube.
+
+1. Open Chrome: chrome://extensions/
+2. Enable 'Developer mode' (top right)
+3. Click 'Load unpacked'
+4. Select: $PWD/build/youtube-blocker-extension/
+
+The extension will:
+  - Auto-enable on install (no click needed)
+  - Configure proxy: 127.0.0.1:8888
+  - Get token from backend
+  - Send token in headers
+
+Result:
+  ✅ Chrome with extension → YouTube accessible
+  ❌ Firefox/Edge/other browsers → YouTube blocked
+  ❌ Chrome without extension → YouTube blocked
+
+Verify Blocking:
+================
+# Test firewall (should be blocked)
+curl https://youtube.com
+# → Connection rejected ✅
+
+# Check backend status
+sudo ./start-backend.sh status
+
+# Check firewall status
+sudo ./setup-firewall.sh status
+
+Service Management (if systemd available):
+==========================================
+  Status:   sudo systemctl status $SERVICE_NAME
+  Restart:  sudo systemctl restart $SERVICE_NAME
+  Logs:     sudo journalctl -u $SERVICE_NAME -f
+
+Or Manual Control:
+==================
+  Status:   sudo ./start-backend.sh status
+  Stop:     sudo ./start-backend.sh stop
+  Start:    sudo ./start-backend.sh start
+  Logs:     sudo ./start-backend.sh logs
+
+Firewall Management:
+====================
+  Status:   sudo ./setup-firewall.sh status
+  Test:     sudo ./setup-firewall.sh test
+  Remove:   sudo ./setup-firewall.sh remove
 
 Files:
-  Service:   $INSTALL_DIR/youtube_blocker.py
-  Config:    /var/lib/youtube-blocker/whitelist.json
+======
+  Backend:   $INSTALL_DIR/youtube_blocker.py
+  Whitelist: /var/lib/youtube-blocker/whitelist.json
   Logs:      $LOG_FILE
 
+Documentation:
+==============
+  README.md              - General overview
+  QUICKSTART.md          - Quick installation guide
+  FIREWALL-APPROACH.md   - Detailed firewall architecture
+  TROUBLESHOOTING.md     - Common issues & solutions
+
 Uninstall:
-  Run: sudo ./uninstall.sh
+==========
+  sudo ./uninstall.sh
+
+Next Step: Install Chrome extension (see above) ⬆️
 "
+}
+
+# Setup firewall rules
+setup_firewall() {
+    print_message "$YELLOW" "Setting up firewall to block YouTube..."
+
+    if [ -f "./setup-firewall.sh" ]; then
+        ./setup-firewall.sh setup
+        print_message "$GREEN" "Firewall configured successfully"
+    else
+        print_message "$RED" "Error: setup-firewall.sh not found"
+        exit 1
+    fi
+}
+
+# Start backend manually (for non-systemd environments)
+start_backend_manual() {
+    print_message "$YELLOW" "Starting backend service manually..."
+
+    if [ -f "./start-backend.sh" ]; then
+        ./start-backend.sh start
+        print_message "$GREEN" "Backend service started"
+    else
+        print_message "$RED" "Error: start-backend.sh not found"
+        exit 1
+    fi
 }
 
 # Main installation process
@@ -171,10 +253,24 @@ main() {
 
     print_message "$YELLOW" "Starting installation...\n"
 
+    # Install dependencies
     install_dependencies
+
+    # Create installation directory
     create_install_dir
-    install_service
-    start_service
+
+    # Setup firewall (NEW - blocks YouTube system-wide)
+    setup_firewall
+
+    # Try to install and start systemd service
+    # If systemd not available, start manually
+    if command -v systemctl &> /dev/null; then
+        install_service
+        start_service
+    else
+        print_message "$YELLOW" "Systemd not available, starting backend manually..."
+        start_backend_manual
+    fi
 
     show_completion
 }
