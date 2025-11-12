@@ -44,10 +44,18 @@ check_root() {
 resolve_youtube_ips() {
     print_message "$YELLOW" "Resolving YouTube IP addresses..."
 
+    # Check if hosts file has YouTube entries (would interfere with DNS)
+    if grep -q "youtube" /etc/hosts 2>/dev/null; then
+        print_message "$YELLOW" "⚠️  Warning: /etc/hosts has YouTube entries, using IP ranges only"
+        print_message "$YELLOW" "   Run: sudo ./fix-after-uninstall.sh to clean up hosts file"
+    fi
+
     local ips=()
+
+    # Try to resolve IPs using getent (fallback to hardcoded ranges if fails)
     for domain in "${YOUTUBE_DOMAINS[@]}"; do
-        # Get IPs for domain
-        local domain_ips=$(dig +short "$domain" A | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+        # Use getent ahosts instead of dig (more portable)
+        local domain_ips=$(getent ahosts "$domain" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | sort -u || true)
 
         if [ -n "$domain_ips" ]; then
             while IFS= read -r ip; do
@@ -59,12 +67,14 @@ resolve_youtube_ips() {
         fi
     done
 
-    # Also get YouTube IP ranges (common ones)
-    # YouTube typically uses Google's IP ranges
+    # Always add YouTube IP ranges (Google's IP ranges)
+    # These are more reliable than DNS resolution
     local google_ranges=(
         "172.217.0.0/16"
         "142.250.0.0/15"
         "216.58.192.0/19"
+        "172.253.0.0/16"
+        "142.251.0.0/16"
         "172.253.0.0/16"
     )
 
@@ -72,6 +82,13 @@ resolve_youtube_ips() {
         ips+=("$range")
         print_message "$GREEN" "  Added range: $range"
     done
+
+    # If no IPs resolved at all, warn user
+    if [ ${#ips[@]} -eq 0 ]; then
+        print_message "$RED" "❌ Failed to resolve any YouTube IPs"
+        print_message "$YELLOW" "   This might be due to network issues or DNS configuration"
+        return 1
+    fi
 
     echo "${ips[@]}"
 }

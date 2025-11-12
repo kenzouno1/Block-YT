@@ -69,6 +69,11 @@ install_dependencies() {
         python3-requests \
         python3-pil
 
+    # Try to install DNS utilities (optional, for better firewall setup)
+    print_message "$YELLOW" "Installing DNS utilities (optional)..."
+    apt-get install -y dnsutils 2>/dev/null || \
+        print_message "$YELLOW" "⚠️  Could not install dnsutils (dig), will use getent fallback"
+
     print_message "$GREEN" "Dependencies installed successfully"
 }
 
