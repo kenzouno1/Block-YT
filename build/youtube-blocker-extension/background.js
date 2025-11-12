@@ -6,10 +6,25 @@ const API_BASE = 'http://127.0.0.1:9876/api';
 const PROXY_HOST = '127.0.0.1';
 const PROXY_PORT = 8888;
 
-// Initialize extension
-chrome.runtime.onInstalled.addListener(() => {
+// Initialize extension - Auto-enable on install
+chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('YouTube Blocker Extension installed');
-  checkWhitelistStatus();
+
+  // Auto-enable on first install
+  if (details.reason === 'install') {
+    console.log('First install - auto-enabling YouTube access...');
+    try {
+      const result = await addToWhitelist();
+      if (result.success) {
+        console.log('✅ Auto-enabled successfully!');
+      }
+    } catch (error) {
+      console.error('Failed to auto-enable:', error);
+    }
+  } else {
+    // On update, just check status
+    checkWhitelistStatus();
+  }
 });
 
 // Check if profile is whitelisted on startup

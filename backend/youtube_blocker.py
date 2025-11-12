@@ -203,11 +203,15 @@ def add_to_whitelist():
 
         token = whitelist_manager.add_profile(profile_id, profile_name)
 
+        # Unblock YouTube when first profile is added
+        if len(whitelist_manager.get_all()) == 1:
+            logger.info("First profile added - unblocking YouTube")
+            hosts_manager.unblock_youtube()
+
         return jsonify({
             'success': True,
             'token': token,
-            'proxy_url': f'http://127.0.0.1:{PROXY_PORT}',
-            'message': 'Profile added to whitelist'
+            'message': 'Profile added to whitelist - YouTube unblocked'
         })
     except Exception as e:
         logger.error(f"Error adding to whitelist: {e}")
