@@ -189,6 +189,7 @@ async function removeFromWhitelist() {
  */
 async function configureProxy(token) {
   // PAC script to only proxy YouTube domains
+  // NOTE: Must use string concatenation for PROXY_HOST and PROXY_PORT
   const pacScript = `
     function FindProxyForURL(url, host) {
       // Only proxy YouTube-related domains
@@ -202,7 +203,7 @@ async function configureProxy(token) {
           shExpMatch(host, "*.ytimg.com") ||
           shExpMatch(host, "*youtube-nocookie.com") ||
           shExpMatch(host, "*.youtube-nocookie.com")) {
-        return "PROXY ${PROXY_HOST}:${PROXY_PORT}";
+        return "PROXY ` + PROXY_HOST + `:` + PROXY_PORT + `";
       }
 
       // All other traffic goes direct (no proxy)
