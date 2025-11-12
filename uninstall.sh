@@ -32,32 +32,126 @@ check_root() {
     fi
 }
 
-# Stop and disable service
+# Stop and disable systemd service
 stop_service() {
     print_message "$YELLOW" "Stopping YouTube Blocker service..."
 
-    if systemctl is-active --quiet "$SERVICE_NAME"; then
-        systemctl stop "$SERVICE_NAME"
-    fi
+    if command -v systemctl &> /dev/null; then
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            systemctl stop "$SERVICE_NAME"
+        fi
 
-    if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
-        systemctl disable "$SERVICE_NAME"
-    fi
+        if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+            systemctl disable "$SERVICE_NAME"
+        fi
 
-    print_message "$GREEN" "Service stopped and disabled"
+        print_message "$GREEN" "Systemd service stopped and disabled"
+    else
+        print_message "$YELLOW" "Systemd not available, skipping"
+    fi
 }
 
-# Remove service file
+# Stop backend manually if running
+stop_backend_manual() {
+    print_message "$YELLOW" "Stopping backend service..."
+
+    # Check PID file
+    if [ -f "/tmp/youtube-blocker.pid" ]; then
+        local pid=$(cat /tmp/youtube-blocker.pid)
+        if ps -p "$pid" > /dev/null 2>&1; then
+            print_message "$YELLOW" "Killing backend process (PID: $pid)..."
+            kill "$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+
+            # Wait for process to stop
+            for i in {1..5}; do
+                if ! ps -p "$pid" > /dev/null 2>&1; then
+                    break
+                fi
+                sleep 1
+            done
+
+            # Force kill if still running
+            if ps -p "$pid" > /dev/null 2>&1; then
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+
+            print_message "$GREEN" "Backend stopped"
+        fi
+        rm -f /tmp/youtube-blocker.pid
+    else
+        # Try to find and kill any running instances
+        pkill -f "youtube_blocker.py" 2>/dev/null || true
+        print_message "$GREEN" "No backend process found or stopped"
+    fi
+}
+
+# Remove systemd service file
 remove_service() {
     print_message "$YELLOW" "Removing systemd service..."
 
     if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
         rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
+        if command -v systemctl &> /dev/null; then
+            systemctl daemon-reload
+        fi
+        print_message "$GREEN" "Service removed"
+    else
+        print_message "$YELLOW" "Service file not found, skipping"
+    fi
+}
+
+# Remove firewall rules
+remove_firewall() {
+    print_message "$YELLOW" "Removing firewall rules..."
+
+    if ! command -v iptables &> /dev/null; then
+        print_message "$YELLOW" "iptables not available, skipping firewall cleanup"
+        return
     fi
 
-    systemctl daemon-reload
+    # Remove OUTPUT rules
+    iptables -D OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+    iptables -D OUTPUT ! -o lo -j YOUTUBE_BLOCK 2>/dev/null || true
 
-    print_message "$GREEN" "Service removed"
+    # Flush and delete custom chain
+    iptables -F YOUTUBE_BLOCK 2>/dev/null || true
+    iptables -X YOUTUBE_BLOCK 2>/dev/null || true
+
+    # Save rules to persist across reboots
+    if command -v iptables-save > /dev/null 2>&1; then
+        mkdir -p /etc/iptables
+        iptables-save > /etc/iptables/rules.v4 2>/dev/null || \
+        iptables-save > /etc/iptables.rules 2>/dev/null || true
+
+        # Use netfilter-persistent if available
+        if command -v netfilter-persistent > /dev/null 2>&1; then
+            netfilter-persistent save 2>/dev/null || true
+        fi
+    fi
+
+    print_message "$GREEN" "✅ Firewall rules removed"
+}
+
+# Clean up hosts file (in case of old version)
+cleanup_hosts_file() {
+    print_message "$YELLOW" "Checking for old /etc/hosts entries..."
+
+    if grep -q "youtube" /etc/hosts 2>/dev/null; then
+        print_message "$YELLOW" "Found YouTube entries in /etc/hosts, cleaning up..."
+
+        # Backup hosts file
+        cp /etc/hosts /etc/hosts.backup.$(date +%Y%m%d_%H%M%S)
+
+        # Remove YouTube entries
+        sed -i '/# YouTube Blocker - START/,/# YouTube Blocker - END/d' /etc/hosts
+        sed -i '/youtube/d' /etc/hosts
+        sed -i '/googlevideo/d' /etc/hosts
+        sed -i '/ytimg/d' /etc/hosts
+
+        print_message "$GREEN" "✅ Old hosts entries removed"
+    else
+        print_message "$GREEN" "✅ No old hosts entries found"
+    fi
 }
 
 # Remove installation files
@@ -74,28 +168,12 @@ remove_files() {
         rm -f "$LOG_FILE"
     fi
 
+    # Remove temporary log file
+    if [ -f "/tmp/youtube-blocker.log" ]; then
+        rm -f "/tmp/youtube-blocker.log"
+    fi
+
     print_message "$GREEN" "Installation files removed"
-}
-
-# Remove firewall rules
-remove_firewall() {
-    print_message "$YELLOW" "Removing firewall rules..."
-
-    if [ -f "./setup-firewall.sh" ]; then
-        ./setup-firewall.sh remove
-        print_message "$GREEN" "Firewall rules removed"
-    else
-        print_message "$YELLOW" "setup-firewall.sh not found, skipping"
-    fi
-}
-
-# Stop backend manually if running
-stop_backend_manual() {
-    print_message "$YELLOW" "Stopping backend service..."
-
-    if [ -f "./start-backend.sh" ]; then
-        ./start-backend.sh stop 2>/dev/null || print_message "$YELLOW" "Backend not running"
-    fi
 }
 
 # Ask about keeping data
@@ -128,6 +206,7 @@ What was removed:
   ✅ Backend service - Stopped and removed
   ✅ Installation files - Deleted
   ✅ Systemd service - Disabled and removed
+  ✅ Old hosts entries - Cleaned up
 
 YouTube is now accessible from all browsers again.
 
@@ -160,6 +239,7 @@ main() {
     # Remove components
     remove_service            # Remove systemd service
     remove_firewall           # Remove iptables firewall rules
+    cleanup_hosts_file        # Clean up old hosts file entries
     remove_files              # Remove installation files
 
     # Ask about data

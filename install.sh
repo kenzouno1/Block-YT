@@ -1,8 +1,8 @@
 #!/bin/bash
 
 ###############################################################################
-# YouTube Blocker - Installation Script
-# This script installs and configures the YouTube Blocker service on Ubuntu
+# YouTube Blocker - One-Click Installation Script
+# This script does EVERYTHING: install dependencies, setup firewall, start service
 ###############################################################################
 
 set -e
@@ -17,6 +17,16 @@ NC='\033[0m' # No Color
 INSTALL_DIR="/opt/youtube-blocker"
 SERVICE_NAME="youtube-blocker"
 LOG_FILE="/var/log/youtube-blocker.log"
+PROXY_PORT=8888
+YOUTUBE_DOMAINS=(
+    "youtube.com"
+    "www.youtube.com"
+    "m.youtube.com"
+    "youtu.be"
+    "googlevideo.com"
+    "ytimg.com"
+    "youtube-nocookie.com"
+)
 
 # Print colored message
 print_message() {
@@ -53,6 +63,50 @@ check_ubuntu() {
     print_message "$GREEN" "OS: $PRETTY_NAME"
 }
 
+# Check if iptables is available
+check_iptables() {
+    if ! command -v iptables &> /dev/null; then
+        print_message "$RED" "❌ Error: iptables command not found"
+        print_message "$YELLOW" ""
+        print_message "$YELLOW" "This script requires iptables for firewall blocking."
+        print_message "$YELLOW" ""
+        print_message "$YELLOW" "Common causes:"
+        print_message "$YELLOW" "  - Running in a container/sandbox (Docker, LXC, etc.)"
+        print_message "$YELLOW" "  - iptables not installed on the system"
+        print_message "$YELLOW" ""
+        print_message "$YELLOW" "Solutions:"
+        print_message "$YELLOW" "  1. Run on a real Ubuntu system (not container)"
+        print_message "$YELLOW" "  2. Install iptables: sudo apt-get install iptables"
+        print_message "$YELLOW" "  3. Use Docker with --cap-add=NET_ADMIN flag"
+        print_message "$YELLOW" ""
+        print_message "$RED" "Cannot proceed without iptables. Installation aborted."
+        exit 1
+    fi
+    return 0
+}
+
+# Clean up old hosts file entries (from previous version)
+cleanup_hosts_file() {
+    print_message "$YELLOW" "Checking for old /etc/hosts entries..."
+
+    if grep -q "youtube" /etc/hosts 2>/dev/null; then
+        print_message "$YELLOW" "Found old YouTube entries in /etc/hosts, cleaning up..."
+
+        # Backup hosts file
+        cp /etc/hosts /etc/hosts.backup.$(date +%Y%m%d_%H%M%S)
+
+        # Remove YouTube entries
+        sed -i '/# YouTube Blocker - START/,/# YouTube Blocker - END/d' /etc/hosts
+        sed -i '/youtube/d' /etc/hosts
+        sed -i '/googlevideo/d' /etc/hosts
+        sed -i '/ytimg/d' /etc/hosts
+
+        print_message "$GREEN" "✅ Old hosts entries removed"
+    else
+        print_message "$GREEN" "✅ No old hosts entries found"
+    fi
+}
+
 # Install Python dependencies
 install_dependencies() {
     print_message "$YELLOW" "Installing Python dependencies..."
@@ -67,12 +121,9 @@ install_dependencies() {
         python3-flask \
         python3-flask-cors \
         python3-requests \
-        python3-pil
-
-    # Try to install DNS utilities (optional, for better firewall setup)
-    print_message "$YELLOW" "Installing DNS utilities (optional)..."
-    apt-get install -y dnsutils 2>/dev/null || \
-        print_message "$YELLOW" "⚠️  Could not install dnsutils (dig), will use getent fallback"
+        python3-pil \
+        iptables \
+        iptables-persistent
 
     print_message "$GREEN" "Dependencies installed successfully"
 }
@@ -97,6 +148,88 @@ create_install_dir() {
     chmod 755 /var/lib/youtube-blocker
 
     print_message "$GREEN" "Installation directory created"
+}
+
+# Resolve YouTube IPs (without printing to stdout, use stderr for messages)
+resolve_youtube_ips() {
+    local ips=()
+
+    # Try to resolve IPs using getent (fallback to hardcoded ranges if fails)
+    for domain in "${YOUTUBE_DOMAINS[@]}"; do
+        local domain_ips=$(getent ahosts "$domain" 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | sort -u || true)
+
+        if [ -n "$domain_ips" ]; then
+            while IFS= read -r ip; do
+                if [[ ! " ${ips[@]} " =~ " ${ip} " ]]; then
+                    ips+=("$ip")
+                fi
+            done <<< "$domain_ips"
+        fi
+    done
+
+    # Always add YouTube IP ranges (Google's IP ranges)
+    local google_ranges=(
+        "172.217.0.0/16"
+        "142.250.0.0/15"
+        "216.58.192.0/19"
+        "172.253.0.0/16"
+        "142.251.0.0/16"
+    )
+
+    for range in "${google_ranges[@]}"; do
+        ips+=("$range")
+    done
+
+    # Return IPs
+    echo "${ips[@]}"
+}
+
+# Setup firewall to block YouTube
+setup_firewall() {
+    print_message "$YELLOW" "Setting up firewall to block YouTube..."
+
+    # Get YouTube IPs
+    local youtube_ips=($(resolve_youtube_ips))
+
+    if [ ${#youtube_ips[@]} -eq 0 ]; then
+        print_message "$RED" "Error: No YouTube IPs resolved"
+        exit 1
+    fi
+
+    print_message "$YELLOW" "Resolved ${#youtube_ips[@]} YouTube IP addresses/ranges"
+
+    # Create custom chain for YouTube blocking
+    iptables -N YOUTUBE_BLOCK 2>/dev/null || iptables -F YOUTUBE_BLOCK
+
+    # Block YouTube IPs in the custom chain
+    for ip in "${youtube_ips[@]}"; do
+        iptables -A YOUTUBE_BLOCK -d "$ip" -j REJECT --reject-with icmp-host-prohibited 2>/dev/null || true
+    done
+
+    # Insert rule at the beginning of OUTPUT chain
+    # But ALLOW localhost connections (for proxy)
+    iptables -C OUTPUT -o lo -j ACCEPT 2>/dev/null || \
+        iptables -I OUTPUT 1 -o lo -j ACCEPT
+
+    # Jump to YOUTUBE_BLOCK chain for non-localhost traffic
+    iptables -C OUTPUT ! -o lo -j YOUTUBE_BLOCK 2>/dev/null || \
+        iptables -I OUTPUT 2 ! -o lo -j YOUTUBE_BLOCK
+
+    # Save rules to persist across reboots
+    if command -v iptables-save > /dev/null 2>&1; then
+        mkdir -p /etc/iptables
+        iptables-save > /etc/iptables/rules.v4 2>/dev/null || \
+        iptables-save > /etc/iptables.rules 2>/dev/null || true
+
+        # Use netfilter-persistent if available
+        if command -v netfilter-persistent > /dev/null 2>&1; then
+            netfilter-persistent save 2>/dev/null || true
+        fi
+    fi
+
+    print_message "$GREEN" "✅ Firewall configured successfully"
+    print_message "$GREEN" "   - YouTube IPs blocked: ${#youtube_ips[@]}"
+    print_message "$GREEN" "   - Localhost traffic allowed (for proxy)"
 }
 
 # Install systemd service
@@ -134,6 +267,56 @@ start_service() {
     fi
 }
 
+# Start backend manually (for non-systemd environments)
+start_backend_manual() {
+    print_message "$YELLOW" "Starting backend service manually..."
+
+    # Check if already running
+    if [ -f "/tmp/youtube-blocker.pid" ]; then
+        local pid=$(cat /tmp/youtube-blocker.pid)
+        if ps -p "$pid" > /dev/null 2>&1; then
+            print_message "$YELLOW" "Backend already running (PID: $pid), stopping first..."
+            kill "$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+            sleep 1
+        fi
+        rm -f /tmp/youtube-blocker.pid
+    fi
+
+    # Start backend in background
+    cd "$(dirname "$0")"
+    nohup python3 backend/youtube_blocker.py > /tmp/youtube-blocker.log 2>&1 &
+    local pid=$!
+    echo $pid > /tmp/youtube-blocker.pid
+
+    # Wait for service to start
+    sleep 2
+
+    # Check if started successfully
+    if ps -p "$pid" > /dev/null 2>&1; then
+        print_message "$GREEN" "✅ Backend service started successfully!"
+        print_message "$GREEN" "   PID: $pid"
+
+        # Test API
+        if curl -s http://127.0.0.1:9876/api/health > /dev/null 2>&1; then
+            print_message "$GREEN" "   API: http://127.0.0.1:9876 ✅"
+            print_message "$GREEN" "   Proxy: http://127.0.0.1:8888 ✅"
+        else
+            print_message "$YELLOW" "   Waiting for API to be ready..."
+            sleep 2
+            if curl -s http://127.0.0.1:9876/api/health > /dev/null 2>&1; then
+                print_message "$GREEN" "   API: http://127.0.0.1:9876 ✅"
+            else
+                print_message "$RED" "   API not responding. Check logs:"
+                print_message "$YELLOW" "   tail -f /tmp/youtube-blocker.log"
+            fi
+        fi
+    else
+        print_message "$RED" "❌ Failed to start backend service"
+        print_message "$YELLOW" "Check logs: tail -f /tmp/youtube-blocker.log"
+        exit 1
+    fi
+}
+
 # Show completion message
 show_completion() {
     print_message "$GREEN" "
@@ -167,49 +350,26 @@ Result:
   ❌ Firefox/Edge/other browsers → YouTube blocked
   ❌ Chrome without extension → YouTube blocked
 
-Verify Blocking:
-================
-# Test firewall (should be blocked)
-curl https://youtube.com
-# → Connection rejected ✅
-
-# Check backend status
-sudo ./start-backend.sh status
-
-# Check firewall status
-sudo ./setup-firewall.sh status
-
-Service Management (if systemd available):
-==========================================
+Service Management:
+===================
   Status:   sudo systemctl status $SERVICE_NAME
   Restart:  sudo systemctl restart $SERVICE_NAME
   Logs:     sudo journalctl -u $SERVICE_NAME -f
 
-Or Manual Control:
-==================
-  Status:   sudo ./start-backend.sh status
-  Stop:     sudo ./start-backend.sh stop
-  Start:    sudo ./start-backend.sh start
-  Logs:     sudo ./start-backend.sh logs
+Or if no systemd:
+  Check:    ps aux | grep youtube_blocker.py
+  Logs:     tail -f /tmp/youtube-blocker.log
 
 Firewall Management:
 ====================
-  Status:   sudo ./setup-firewall.sh status
-  Test:     sudo ./setup-firewall.sh test
-  Remove:   sudo ./setup-firewall.sh remove
+  Check:    sudo iptables -L YOUTUBE_BLOCK -n
+  Remove:   sudo ./uninstall.sh
 
 Files:
 ======
   Backend:   $INSTALL_DIR/youtube_blocker.py
   Whitelist: /var/lib/youtube-blocker/whitelist.json
   Logs:      $LOG_FILE
-
-Documentation:
-==============
-  README.md              - General overview
-  QUICKSTART.md          - Quick installation guide
-  FIREWALL-APPROACH.md   - Detailed firewall architecture
-  TROUBLESHOOTING.md     - Common issues & solutions
 
 Uninstall:
 ==========
@@ -219,44 +379,22 @@ Next Step: Install Chrome extension (see above) ⬆️
 "
 }
 
-# Setup firewall rules
-setup_firewall() {
-    print_message "$YELLOW" "Setting up firewall to block YouTube..."
-
-    if [ -f "./setup-firewall.sh" ]; then
-        ./setup-firewall.sh setup
-        print_message "$GREEN" "Firewall configured successfully"
-    else
-        print_message "$RED" "Error: setup-firewall.sh not found"
-        exit 1
-    fi
-}
-
-# Start backend manually (for non-systemd environments)
-start_backend_manual() {
-    print_message "$YELLOW" "Starting backend service manually..."
-
-    if [ -f "./start-backend.sh" ]; then
-        ./start-backend.sh start
-        print_message "$GREEN" "Backend service started"
-    else
-        print_message "$RED" "Error: start-backend.sh not found"
-        exit 1
-    fi
-}
-
 # Main installation process
 main() {
     print_message "$GREEN" "
 ╔════════════════════════════════════════════════════════════════╗
-║              YouTube Blocker - Installation Script             ║
+║        YouTube Blocker - One-Click Installation                ║
 ╚════════════════════════════════════════════════════════════════╝
 "
 
     check_root
     check_ubuntu
+    check_iptables
 
-    print_message "$YELLOW" "Starting installation...\n"
+    print_message "$YELLOW" "Starting installation...\\n"
+
+    # Clean up old version (hosts file entries)
+    cleanup_hosts_file
 
     # Install dependencies
     install_dependencies
@@ -264,7 +402,7 @@ main() {
     # Create installation directory
     create_install_dir
 
-    # Setup firewall (NEW - blocks YouTube system-wide)
+    # Setup firewall (BLOCKS YouTube system-wide)
     setup_firewall
 
     # Try to install and start systemd service
