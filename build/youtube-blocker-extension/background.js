@@ -197,6 +197,9 @@ async function configureProxy(token) {
     // Store token for proxy requests
     await setStoredValue('proxyToken', token);
 
+    // Update header modification rules
+    await updateHeaderRules();
+
     console.log('Proxy configured successfully');
   } catch (error) {
     console.error('Error configuring proxy:', error);
@@ -214,6 +217,9 @@ async function clearProxy() {
 
     await setStoredValue('proxyToken', null);
 
+    // Clear header modification rules
+    await updateHeaderRules();
+
     console.log('Proxy cleared successfully');
   } catch (error) {
     console.error('Error clearing proxy:', error);
@@ -221,24 +227,44 @@ async function clearProxy() {
 }
 
 /**
- * Add token to proxy requests
+ * Add token to proxy requests using declarativeNetRequest
  */
-chrome.webRequest.onBeforeSendHeaders.addListener(
-  async (details) => {
-    const token = await getStoredValue('proxyToken');
+async function updateHeaderRules() {
+  const token = await getStoredValue('proxyToken');
 
-    if (token && details.url.includes('youtube.com')) {
-      details.requestHeaders.push({
-        name: 'X-YT-Blocker-Token',
-        value: token
-      });
-    }
+  // Remove existing rules
+  const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
+  const ruleIds = existingRules.map(rule => rule.id);
 
-    return { requestHeaders: details.requestHeaders };
-  },
-  { urls: ["*://*.youtube.com/*", "*://youtube.com/*", "*://youtu.be/*"] },
-  ["blocking", "requestHeaders"]
-);
+  if (ruleIds.length > 0) {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: ruleIds
+    });
+  }
+
+  // Add new rule with token if available
+  if (token) {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      addRules: [{
+        id: 1,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [{
+            header: 'X-YT-Blocker-Token',
+            operation: 'set',
+            value: token
+          }]
+        },
+        condition: {
+          urlFilter: '*youtube.com*',
+          resourceTypes: ['main_frame', 'sub_frame', 'xmlhttprequest']
+        }
+      }]
+    });
+    console.log('Header modification rule added');
+  }
+}
 
 /**
  * Handle messages from popup

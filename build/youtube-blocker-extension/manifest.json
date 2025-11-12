@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
   "name": "YouTube Blocker Whitelist",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Whitelist your Chrome profile to access YouTube",
   "permissions": [
     "storage",
     "proxy",
-    "webRequest"
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "http://127.0.0.1:9876/*",
