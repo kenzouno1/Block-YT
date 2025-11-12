@@ -1,0 +1,87 @@
+#!/bin/bash
+
+###############################################################################
+# YouTube Blocker - Quick Install Script
+# Usage: curl -sSL https://raw.githubusercontent.com/kenzouno1/Block-YT/main/quick-install.sh | sudo bash
+###############################################################################
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_message() {
+    echo -e "${2}${1}${NC}"
+}
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    print_message "Error: This script must be run as root (use sudo)" "$RED"
+    exit 1
+fi
+
+print_message "
+╔════════════════════════════════════════════════════════════════╗
+║        YouTube Blocker - Quick Install                         ║
+╚════════════════════════════════════════════════════════════════╝
+" "$GREEN"
+
+# Configuration
+REPO_URL="https://github.com/kenzouno1/Block-YT.git"
+BRANCH="main"
+INSTALL_DIR="/tmp/block-yt-install"
+
+print_message "Step 1: Installing dependencies..." "$YELLOW"
+apt-get update -qq
+apt-get install -y git curl > /dev/null 2>&1
+print_message "✅ Dependencies installed" "$GREEN"
+
+print_message "\nStep 2: Downloading YouTube Blocker..." "$YELLOW"
+# Remove old installation directory if exists
+rm -rf "$INSTALL_DIR"
+
+# Clone repository
+git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" > /dev/null 2>&1
+cd "$INSTALL_DIR"
+
+print_message "✅ Repository downloaded" "$GREEN"
+
+print_message "\nStep 3: Running installation..." "$YELLOW"
+# Run the main installer
+bash install.sh
+
+print_message "\n✅ Installation complete!" "$GREEN"
+
+# Cleanup
+print_message "\nStep 4: Cleaning up..." "$YELLOW"
+cd /
+rm -rf "$INSTALL_DIR"
+print_message "✅ Cleanup complete" "$GREEN"
+
+print_message "
+╔════════════════════════════════════════════════════════════════╗
+║                      All Done! 🎉                              ║
+╚════════════════════════════════════════════════════════════════╝
+
+Next step: Install Chrome Extension
+===================================
+1. Download extension from:
+   https://github.com/kenzouno1/Block-YT/raw/main/build/youtube-blocker-extension.zip
+
+2. Or clone repo and load:
+   git clone $REPO_URL
+   cd Block-YT
+   # Chrome → chrome://extensions/ → Load unpacked → build/youtube-blocker-extension/
+
+3. Extension will auto-enable
+   → Chrome with extension can access YouTube
+   → Other browsers blocked
+
+For manual installation or troubleshooting:
+  git clone $REPO_URL
+  cd Block-YT
+  sudo ./install.sh
+" "$GREEN"

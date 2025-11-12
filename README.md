@@ -2,6 +2,35 @@
 
 Một ứng dụng chặn YouTube hoàn toàn trên Ubuntu, chỉ cho phép các Chrome profile được whitelist truy cập.
 
+## ⚡ Cài đặt nhanh (Quick Install)
+
+**Một lệnh duy nhất:**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/kenzouno1/Block-YT/main/quick-install.sh | sudo bash
+```
+
+Script này sẽ tự động:
+- ✅ Clone repository
+- ✅ Cài đặt dependencies
+- ✅ Setup /etc/hosts blocking
+- ✅ Khởi động backend service
+- ✅ Dọn dẹp tự động
+
+**Sau khi cài đặt:**
+1. Mở Chrome: `chrome://extensions/`
+2. Bật "Developer mode"
+3. Click "Load unpacked"
+4. Chọn folder: `Block-YT/build/youtube-blocker-extension/`
+
+Hoặc download extension:
+```bash
+# Clone repo để lấy extension
+git clone https://github.com/kenzouno1/Block-YT.git
+cd Block-YT
+# Load extension từ: build/youtube-blocker-extension/
+```
+
 ## ✨ Tính năng
 
 - ✅ **Tự động khởi động**: Ứng dụng tự động start cùng với hệ điều hành Ubuntu
