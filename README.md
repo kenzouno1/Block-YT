@@ -31,6 +31,26 @@ cd Block-YT
 # Load extension từ: build/youtube-blocker-extension/
 ```
 
+## ⚡ Gỡ cài đặt nhanh (Quick Uninstall)
+
+**Một lệnh duy nhất:**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/kenzouno1/Block-YT/main/quick-uninstall.sh | sudo bash
+```
+
+Script này sẽ tự động:
+- ✅ Download repository
+- ✅ Dừng và xóa backend service
+- ✅ Xóa /etc/hosts blocking
+- ✅ Xóa installation files
+- ✅ Dọn dẹp tự động
+
+**Lưu ý**: Bạn vẫn cần tự xóa Chrome extension thủ công:
+1. Mở Chrome: `chrome://extensions/`
+2. Tìm "YouTube Blocker Whitelist"
+3. Click "Remove"
+
 ## ✨ Tính năng
 
 - ✅ **Tự động khởi động**: Ứng dụng tự động start cùng với hệ điều hành Ubuntu
@@ -303,6 +323,18 @@ sudo ./install.sh
 ```
 
 ## 🗑️ Gỡ cài đặt
+
+### Cách 1: Quick Uninstall (Khuyến nghị)
+
+Gỡ cài đặt nhanh chóng với một lệnh duy nhất:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/kenzouno1/Block-YT/main/quick-uninstall.sh | sudo bash
+```
+
+### Cách 2: Manual Uninstall
+
+Nếu bạn đã clone repository:
 
 ```bash
 sudo ./uninstall.sh
