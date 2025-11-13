@@ -1,93 +1,121 @@
 /**
- * YouTube Studio - Block Access to Specific Pages
- * 1. Blocks access to specified URLs (redirect to Videos page)
- * 2. Removes specified menu items from navigation
+ * YouTube Studio - Whitelist Approach
+ * 1. Only allows access to whitelisted pages (Videos)
+ * 2. Removes all menu items except whitelisted ones
  */
 
 (function() {
   'use strict';
 
-  // Configuration: Add menu items to block here
-  const BLOCKED_ITEMS = [
+  // Configuration: WHITELIST - Only these items are allowed
+  const ALLOWED_ITEMS = [
     {
-      name: 'Dashboard',
-      urlPattern: 'dashboard',
-      // Also block when URL ends with channel ID only (default is dashboard)
-      isDefaultPage: true
-    },
-    {
-      name: 'Community',
-      urlPattern: 'community',
-      isDefaultPage: false
-    },
-    {
-      name: 'Comments',
-      urlPattern: 'comments',
+      name: 'Content',  // This is the "Content" menu (Videos page)
+      urlPattern: 'videos',
       isDefaultPage: false
     }
   ];
 
   /**
-   * Check if current URL matches blocked pages and redirect
+   * Check if current URL is allowed, otherwise redirect to Videos
    */
-  function blockPageAccess() {
+  function enforceWhitelist() {
     const currentUrl = window.location.href;
 
-    // Check each blocked item
-    for (const item of BLOCKED_ITEMS) {
-      let isBlocked = false;
+    // Check if URL ends with just channel ID (default is dashboard - not allowed)
+    if (/\/channel\/[^\/]+\/?$/.test(currentUrl)) {
+      console.log('[YT Blocker] Default page (dashboard) blocked, redirecting to videos...');
+      redirectToVideos();
+      return;
+    }
 
-      // Check if URL contains the blocked path
+    // Check if this is a video detail page (/video/VIDEO_ID/...)
+    const videoMatch = currentUrl.match(/\/video\/[^\/]+\/([^\/\?#]+)/);
+    if (videoMatch) {
+      const videoSection = videoMatch[1];
+
+      // Only allow 'edit' section in video detail page
+      // Block: analytics, comments, etc.
+      if (videoSection !== 'edit') {
+        console.log(`[YT Blocker] Video page section "${videoSection}" blocked, redirecting to edit...`);
+        redirectToVideoEdit();
+        return;
+      }
+      // 'edit' is allowed, continue
+      return;
+    }
+
+    // Check if current path is in whitelist (for channel pages)
+    let isAllowed = false;
+    for (const item of ALLOWED_ITEMS) {
       if (currentUrl.includes(`/${item.urlPattern}`)) {
-        isBlocked = true;
+        isAllowed = true;
+        break;
       }
+    }
 
-      // Check if it's a default page (channel ID only)
-      if (item.isDefaultPage && /\/channel\/[^\/]+\/?$/.test(currentUrl)) {
-        isBlocked = true;
-      }
+    // If not in whitelist, redirect to videos
+    if (!isAllowed) {
+      // Extract what page user tried to access
+      const pathMatch = currentUrl.match(/\/channel\/[^\/]+\/([^\/\?#]+)/);
+      const attemptedPage = pathMatch ? pathMatch[1] : 'unknown';
 
-      if (isBlocked) {
-        console.log(`[YT Blocker] ${item.name} access blocked, redirecting...`);
-
-        // Extract channel ID from URL
-        const channelMatch = currentUrl.match(/\/channel\/([^\/]+)/);
-        if (channelMatch && channelMatch[1]) {
-          const channelId = channelMatch[1];
-          // Redirect to Videos page instead
-          const newUrl = `https://studio.youtube.com/channel/${channelId}/videos`;
-
-          // Use replace to prevent back button returning to blocked page
-          window.location.replace(newUrl);
-          return; // Stop checking other items
-        }
-      }
+      console.log(`[YT Blocker] Page "${attemptedPage}" not whitelisted, redirecting to videos...`);
+      redirectToVideos();
     }
   }
 
   /**
-   * Remove blocked menu elements from navigation
+   * Redirect to Videos page
    */
-  function removeBlockedElements() {
+  function redirectToVideos() {
+    const channelMatch = window.location.href.match(/\/channel\/([^\/]+)/);
+    if (channelMatch && channelMatch[1]) {
+      const channelId = channelMatch[1];
+      const newUrl = `https://studio.youtube.com/channel/${channelId}/videos`;
+      window.location.replace(newUrl);
+    }
+  }
+
+  /**
+   * Redirect to Video Edit page
+   */
+  function redirectToVideoEdit() {
+    const videoMatch = window.location.href.match(/\/video\/([^\/]+)/);
+    if (videoMatch && videoMatch[1]) {
+      const videoId = videoMatch[1];
+      const newUrl = `https://studio.youtube.com/video/${videoId}/edit`;
+      window.location.replace(newUrl);
+    }
+  }
+
+  /**
+   * Remove all menu elements except whitelisted ones
+   */
+  function removeNonWhitelistedMenus() {
     // Find all menu links
     const menuLinks = document.querySelectorAll('a.menu-item-link');
 
     menuLinks.forEach(link => {
-      // Check if this is a blocked menu item
       const textElement = link.querySelector('.nav-item-text');
       if (textElement) {
         const menuText = textElement.textContent.trim();
 
-        // Check against all blocked items
-        for (const item of BLOCKED_ITEMS) {
+        // Check if this menu item is in whitelist
+        let isAllowed = false;
+        for (const item of ALLOWED_ITEMS) {
           if (menuText === item.name) {
-            // Remove the parent <li> element
-            const listItem = link.closest('li[role="presentation"]');
-            if (listItem) {
-              console.log(`[YT Blocker] Removing ${item.name} menu element`);
-              listItem.remove();
-            }
+            isAllowed = true;
             break;
+          }
+        }
+
+        // If not in whitelist, remove it
+        if (!isAllowed) {
+          const listItem = link.closest('li[role="presentation"]');
+          if (listItem) {
+            console.log(`[YT Blocker] Removing non-whitelisted menu: ${menuText}`);
+            listItem.remove();
           }
         }
       }
@@ -105,8 +133,8 @@
       const currentUrl = window.location.href;
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
-        console.log('[YT Blocker] URL changed, checking for blocked pages...');
-        blockPageAccess();
+        console.log('[YT Blocker] URL changed, enforcing whitelist...');
+        enforceWhitelist();
       }
     }, 500);
 
@@ -116,17 +144,17 @@
 
     history.pushState = function() {
       originalPushState.apply(this, arguments);
-      setTimeout(blockPageAccess, 100);
+      setTimeout(enforceWhitelist, 100);
     };
 
     history.replaceState = function() {
       originalReplaceState.apply(this, arguments);
-      setTimeout(blockPageAccess, 100);
+      setTimeout(enforceWhitelist, 100);
     };
 
     // Monitor popstate (back/forward buttons)
     window.addEventListener('popstate', () => {
-      setTimeout(blockPageAccess, 100);
+      setTimeout(enforceWhitelist, 100);
     });
   }
 
@@ -135,20 +163,20 @@
    */
   function init() {
     console.log('[YT Blocker] Content script initialized for YouTube Studio');
-    console.log(`[YT Blocker] Blocking ${BLOCKED_ITEMS.length} pages: ${BLOCKED_ITEMS.map(i => i.name).join(', ')}`);
+    console.log(`[YT Blocker] Whitelist mode: Only allowing ${ALLOWED_ITEMS.map(i => i.name).join(', ')}`);
 
-    // Immediately check and block page access
-    blockPageAccess();
+    // Immediately enforce whitelist
+    enforceWhitelist();
 
     // Monitor URL changes for SPA navigation
     monitorUrlChanges();
 
-    // Remove blocked menu elements
-    removeBlockedElements();
+    // Remove non-whitelisted menu elements
+    removeNonWhitelistedMenus();
 
-    // Watch for DOM changes to remove blocked elements if they reappear
+    // Watch for DOM changes to remove non-whitelisted menus if they reappear
     const observer = new MutationObserver(() => {
-      removeBlockedElements();
+      removeNonWhitelistedMenus();
     });
 
     // Observe navigation changes

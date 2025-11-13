@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Blocker Whitelist",
-  "version": "1.0.7",
+  "version": "1.1.1",
   "description": "Whitelist your Chrome profile to access YouTube",
   "permissions": [
     "storage",
